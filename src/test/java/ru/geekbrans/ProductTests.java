@@ -8,11 +8,18 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import retrofit2.Converter;
+import ru.geekbrains.db.dao.CategoriesMapper;
+import ru.geekbrains.db.dao.ProductsMapper;
+import ru.geekbrains.db.model.Categories;
+import ru.geekbrains.db.model.CategoriesExample;
+import ru.geekbrains.db.model.Products;
+import ru.geekbrains.db.model.ProductsExample;
 import ru.geekbrans.base.enums.CategoryType;
 import ru.geekbrans.dto.ErrorBody;
 import ru.geekbrans.dto.Product;
 import ru.geekbrans.service.ProductService;
 import ru.geekbrans.service.ProductServiceWrong;
+import ru.geekbrans.utils.DbUtils;
 import ru.geekbrans.utils.RetrofitUtils;
 
 
@@ -28,6 +35,8 @@ public class ProductTests {
     static ProductService productService;
     static ProductServiceWrong productServiceWrong;
     Product product;
+    static ProductsMapper productsMapper;
+    static CategoriesMapper categoriesMapper;
 
     @SneakyThrows
     @BeforeAll
@@ -36,6 +45,8 @@ public class ProductTests {
                 .create(ProductService.class);
         productServiceWrong = RetrofitUtils.getRetrofit()
                 .create(ProductServiceWrong.class);
+        productsMapper = DbUtils.getProductsMapper();
+        categoriesMapper = DbUtils.getCategoriesMapper();
     }
 
     @SneakyThrows
@@ -74,6 +85,10 @@ public class ProductTests {
         assertThat(response.body().getCategoryTitle()).isEqualTo(product.getCategoryTitle());
         assertThat(response.body().getPrice()).isEqualTo(product.getPrice());
         assertThat(response.body().getTitle()).isEqualTo(product.getTitle());
+        Products productDB = productsMapper.selectByPrimaryKey(productId.longValue());
+        assertThat(response.body().getPrice()).isEqualTo(productDB.getPrice());
+        assertThat(response.body().getTitle()).isEqualTo(productDB.getTitle());
+
     }
 
     @SneakyThrows
@@ -88,6 +103,7 @@ public class ProductTests {
         if (errorBody != null) {
             assertThat(errorBody.getMessage()).startsWith("Unable to find product with id");
         }
+        assertThat(productsMapper.selectByPrimaryKey(wrondProdId.longValue())).isNull();
     }
 
     @SneakyThrows
@@ -98,6 +114,7 @@ public class ProductTests {
                         .execute();
         productId = response.body().getId();
         assertThat(response.isSuccessful()).isTrue();
+        assertThat(productsMapper.selectByPrimaryKey(productId.longValue())).isNotNull();
     }
 
     @SneakyThrows
@@ -111,6 +128,7 @@ public class ProductTests {
         if (errorBody != null) {
             assertThat(errorBody.getMessage()).isEqualTo("Id must be null for new entity");
         }
+        assertThat(productsMapper.selectByPrimaryKey(555L)).isNull();
     }
 
     @SneakyThrows
@@ -150,6 +168,7 @@ public class ProductTests {
                 productService.deleteProduct(productId)
                         .execute();
         assertThat(response.isSuccessful()).isTrue();
+        assertThat(productsMapper.selectByPrimaryKey(productId.longValue())).isNull();
         productId = null;
     }
 
@@ -189,6 +208,19 @@ public class ProductTests {
         assertThat(response.body().getPrice()).isEqualTo(newProduct.getPrice());
         assertThat(response.body().getTitle()).isEqualTo(newProduct.getTitle());
         assertThat(response.body().getCategoryTitle()).isEqualTo(newProduct.getCategoryTitle());
+
+        CategoriesExample categoriesExample = new CategoriesExample();
+        categoriesExample.createCriteria().andTitleEqualTo(newProduct.getCategoryTitle());
+        List<Categories> categories = categoriesMapper.selectByExample(categoriesExample);
+        assertThat(categories).isNotNull();
+        assertThat(categories.size()).isEqualTo(1);
+        ProductsExample productsExample = new ProductsExample();
+        productsExample.createCriteria()
+                       .andIdEqualTo(productId.longValue())
+                       .andPriceEqualTo(newProduct.getPrice())
+                       .andTitleEqualTo(newProduct.getTitle())
+                       .andCategory_idEqualTo(Long.valueOf(categories.get(0).getId()));
+        assertThat(productsMapper.countByExample(productsExample)).isEqualTo(1L);
     }
 
     @SneakyThrows
@@ -208,6 +240,7 @@ public class ProductTests {
         if (errorBody != null) {
             assertThat(errorBody.getMessage()).containsIgnoringCase("doesn't exist");
         }
+        assertThat(productsMapper.selectByPrimaryKey(wrondProdId.longValue())).isNull();
     }
 
     @SneakyThrows
@@ -222,13 +255,9 @@ public class ProductTests {
 
     @AfterEach
     void tearDown() {
-        if (productId!=null)
-        try {
-            retrofit2.Response<ResponseBody> response =
-                    productService.deleteProduct(productId)
-                            .execute();
-            assertThat(response.isSuccessful()).isTrue();
-        } catch (IOException e) {
+        if (productId!=null) {
+            productsMapper.deleteByPrimaryKey(productId.longValue());
         }
     }
+
 }
